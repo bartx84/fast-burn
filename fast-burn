@@ -1,0 +1,160 @@
+#!/bin/bash
+version="0.1"
+if [ $USER != 'root' ]; then
+echo "You must be root to execute the script!"
+exit
+fi
+version="0.1"
+options_file=/etc/fast-burn.conf
+echo -e "\e[1;31m                    $0 Version $version \e[1;37m"
+
+
+#Configure burn device, speed, temp dir
+function config ()
+{
+echo "Insert your device [/dev/sr0]"   
+read cdevice
+if [ "$cdevice" == "" ]
+then
+cdevice="/dev/sr0"
+fi
+
+echo "Select the default speed [8]"   
+read cspeed
+if [ "$cspeed" == "" ]
+then
+cspeed="8"
+fi
+
+echo "Select the temp dir [/var/tmp]"
+read ctmpdir
+if [ "$ctempdir" == "" ]
+then
+ctmpdir="/var/tmp"
+fi
+
+ echo $cdevice > $options_file
+ echo $cspeed >> $options_file
+ echo $ctmpdir >> $options_file
+ }
+
+if [ -e "$options_file" ]
+then
+echo "Already configured"
+        else echo "$0 config missing, do you want create config file? (yes, no)[yes]"
+        read mfo
+                if [ "$mfo" == "yes" ]
+                then
+                config
+                fi
+                if [ "$mfo" == "" ]
+                then
+                config
+                fi
+                if  [ "$mfo" == "no" ] 
+                then exit
+                fi
+fi
+
+#Read Configuration
+function start () {
+declare -a options
+options=( `cat "$options_file" | tr '\n' ' '`)
+device=${options[0]}
+speed1=${options[1]}
+tmpdir=${options[2]}
+}
+start
+
+#Help Menu
+function cl_menu() {
+echo "Usage:"
+echo "$0 /image/directory/image.iso"
+echo "cd /image/directory $0 image.iso"
+echo "$0 /your/directory"
+echo "cd /your/directory $0 directory_name"
+
+}
+
+#Check and burn the iso image
+function burn_iso() {
+start
+echo "Starting to write $file_abs_path"
+echo "on $device at $speed1 X"
+echo "press enter to continue, c + enter to cancel, o + enter to change option"
+read cont
+if [ "$cont" == "" ]; then
+wodim -dummy -dao dev=$device fs=14M speed=$speed1 -eject -v $file_abs_path
+fi
+
+if [ "$cont" == "c" ]; then
+exit
+fi
+
+if [ "$cont" == "o" ]; then
+config
+burn_iso
+fi
+
+}
+
+
+function make_iso() {
+isoimage="$tmpdir/$(date +%Y%m%d_%H%M%S).iso"
+echo "I will create iso image $isoimage from the directory $dir_abs_path"
+echo "press enter to continue or c + enter to cancel"
+read isomk
+if [ "$isomk" == "" ]; then
+genisoimage -o $isoimage $dir_abs_path
+file_abs_path="$isoimage"
+burn_iso
+rm "$isoimage"
+fi
+if [ "$cont" == "c" ]; then
+rm "$isoimage"
+exit
+fi
+}
+
+
+
+function check_arg() {
+if [ $# -eq 0 ]; then
+cl_menu
+exit 1
+fi
+}
+
+check_arg $@
+if [ "$1" == "" ]
+then
+cl_menu
+fi
+
+function abspath() {
+    DIR=`dirname $1`
+    NAM=`basename $1`
+    echo "$DIR/$NAM"
+    }
+
+if [ -f $1 ]; then
+file_abs_path=$(abspath $1)
+
+declare -a filetype
+filetype=( `echo $(file $1 | cut -d":" -f2 -) | tr '        ' ' '`)
+	if [ "${filetype[1]}" == "ISO" ]; then
+	echo "OK!! $file_abs_path is an iso image"
+	burn_iso
+	else 
+	echo "This is not an iso image!, mabie missing or corrupted file?"
+	exit
+	fi
+fi
+
+if [ -d $1 ]; then
+dir_abs_path=$(abspath $1)
+echo "$dir_abs_path is a directory"
+make_iso
+fi
+
+exit
